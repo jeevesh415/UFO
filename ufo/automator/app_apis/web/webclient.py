@@ -3,12 +3,16 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Type
 
 import html2text
 import requests
 
 from ufo.automator.basic import CommandBasic, ReceiverBasic
+from ufo.utils.url_security import safe_get
+
+logger = logging.getLogger(__name__)
 
 
 class WebReceiver(ReceiverBasic):
@@ -37,8 +41,8 @@ class WebReceiver(ReceiverBasic):
         """
 
         try:
-            # Get the HTML content of the webpage
-            response = requests.get(url, headers=self._headers)
+            # Validate URL (and every redirect target) to prevent SSRF.
+            response = safe_get(url, headers=self._headers)
             response.raise_for_status()
 
             html_content = response.text
@@ -50,9 +54,11 @@ class WebReceiver(ReceiverBasic):
 
             return markdown_content
 
+        except ValueError as e:
+            logger.warning("Blocked URL request: %s", e)
+            return f"Error fetching the URL: {e}"
         except requests.RequestException as e:
-            print(f"Error fetching the URL: {e}")
-
+            logger.warning("Error fetching the URL: %s", e)
             return f"Error fetching the URL: {e}"
 
     def navigate_to_url(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -61,11 +67,14 @@ class WebReceiver(ReceiverBasic):
         """
         url = params.get("url")
         try:
-            # For now, use requests to fetch the page
-            response = requests.get(url, headers=self._headers)
+            # Validate URL (and every redirect target) to prevent SSRF.
+            response = safe_get(url, headers=self._headers)
             response.raise_for_status()
             self.current_page = response.text
             return {"success": True, "url": url, "status_code": response.status_code}
+        except ValueError as e:
+            logger.warning("Blocked URL request: %s", e)
+            return {"error": f"Failed to navigate to URL: {e}", "url": url}
         except Exception as e:
             return {"error": f"Failed to navigate to URL: {str(e)}", "url": url}
 
